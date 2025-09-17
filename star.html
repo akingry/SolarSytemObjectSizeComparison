@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Size Comparison of Solar System Bodies & Stars</title>
+<style>
+  html, body { height: 100%; margin: 0; background: #0b1020; color: #e8ecf1; font-family: system-ui, sans-serif; }
+  #wrap { position: fixed; inset: 0; display: grid; grid-template-rows: auto 1fr auto; }
+  header, footer { padding: 10px 14px; background: rgba(255,255,255,0.05); backdrop-filter: blur(2px); }
+  header b { color: #fff; }
+  #canvas { width: 100%; height: 100%; display: block; cursor: grab; }
+  #canvas.dragging { cursor: grabbing; }
+  .hud {
+    position: absolute; top: 12px; right: 12px; background: rgba(0,0,0,0.45);
+    padding: 10px 12px; border-radius: 10px; font-size: 13px; pointer-events: none;
+  }
+  .key { display: inline-block; min-width: 10px; padding: 2px 6px; border-radius: 6px; background: rgba(255,255,255,0.15); margin-right: 6px; }
+  .legend {
+    position: absolute; left: 12px; bottom: 12px; background: rgba(0,0,0,0.45);
+    padding: 10px 12px; border-radius: 10px; font-size: 13px; max-width: min(700px, 86vw);
+  }
+  .legend-title { font-weight: 700; margin-bottom: 6px; }
+  .legend ul { list-style: none; padding: 0; margin: 0; columns: 2; column-gap: 20px; }
+  .legend li { display: flex; align-items: center; margin: 4px 0; }
+  .swatch { width: 14px; height: 14px; border-radius: 50%; margin-right: 8px; border: 1px solid rgba(255,255,255,0.3); }
+  .note { opacity: 0.85; font-size: 12px; margin-top: 8px; }
+  .scaleHud {
+    position: absolute; left: 12px; top: 12px; background: rgba(0,0,0,0.45);
+    padding: 6px 8px; border-radius: 10px; font-size: 12px;
+  }
+</style>
+</head>
+<body>
+  <div id="wrap">
+    <header>
+      <b>Interactive Size Comparison</b> — Solar System Bodies, White Dwarf, Brown Dwarf, Neutron Star, Sun
+    </header>
+    <div style="position:relative">
+      <canvas id="canvas"></canvas>
+      <div class="scaleHud">Scale: <span id="scaleText">—</span> px per 1000 km</div>
+      <div class="hud">
+        <div><span class="key">⤭</span>Mouse Wheel: Zoom</div>
+        <div><span class="key">⟷</span>Left-Drag: Pan</div>
+        <div><span class="key">⤾</span>Right-Drag: Rotate</div>
+        <div><span class="key">⭘</span>Double-Click: Reset</div>
+      </div>
+      <div class="legend" id="legend"></div>
+    </div>
+    <footer id="footer"></footer>
+  </div>
+
+<script>
+(function() {
+  const bodies = [
+    { name: "Neutron Star (star)", radiusKm: 12,     color: "#ffffff" },
+    { name: "Ceres (dwarf planet)",radiusKm: 473,    color: "#aaa8a2" },
+    { name: "Pluto (dwarf planet)",radiusKm: 1188,   color: "#d4c7bb" },
+    { name: "Eris (dwarf planet)", radiusKm: 1163,   color: "#c8ccd0" },
+    { name: "Moon (moon)",         radiusKm: 1737,   color: "#cfcac1" },
+    { name: "Mercury (planet)",    radiusKm: 2439,   color: "#b9b7b0" },
+    { name: "Callisto (moon)",     radiusKm: 2410,   color: "#a89482" },
+    { name: "Ganymede (moon)",     radiusKm: 2634,   color: "#9a8a78" },
+    { name: "Titan (moon)",        radiusKm: 2575,   color: "#e3c77b" },
+    { name: "Earth (planet)",      radiusKm: 6371,   color: "#4e9bd4" },
+    { name: "White Dwarf (star)",  radiusKm: 7000,   color: "#f3f6ff" },
+    { name: "Jupiter (planet)",    radiusKm: 69911,  color: "#d7b58f" },
+    { name: "Brown Dwarf (star)",  radiusKm: 70000,  color: "#a97c50" },
+    { name: "Sun (star)",          radiusKm: 695700, color: "#ffd27a" }
+  ];
+
+  const canvas = document.getElementById("canvas");
+  const ctx = canvas.getContext("2d");
+  let dpr = Math.max(1, window.devicePixelRatio || 1);
+
+  function resize() {
+    const rect = canvas.getBoundingClientRect();
+    canvas.width  = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    draw();
+  }
+  new ResizeObserver(resize).observe(canvas);
+
+  let pan = { x: 0, y: 0 }, zoom = 1, theta = 0;
+  const maxR = Math.max(...bodies.map(b => b.radiusKm));
+  const baseScale = 180 / maxR; // Sun ~180px radius initially
+
+  let isPan=false,isRot=false,last={x:0,y:0};
+
+  canvas.addEventListener("mousedown",e=>{
+    if(e.button===0){isPan=true;canvas.classList.add("dragging")}
+    if(e.button===2){isRot=true;canvas.classList.add("dragging")}
+    last={x:e.clientX,y:e.clientY};
+  });
+  canvas.addEventListener("contextmenu",e=>{if(isRot)e.preventDefault()});
+  window.addEventListener("mouseup",()=>{isPan=false;isRot=false;canvas.classList.remove("dragging")});
+  window.addEventListener("mousemove",e=>{
+    const dx=e.clientX-last.x,dy=e.clientY-last.y;
+    if(isPan){pan.x+=dx*dpr;pan.y+=dy*dpr;draw();}
+    if(isRot){theta+=dx*0.005;draw();}
+    last={x:e.clientX,y:e.clientY};
+  });
+
+  canvas.addEventListener("wheel",e=>{
+    e.preventDefault();
+    const rect=canvas.getBoundingClientRect();
+    const mx=(e.clientX-rect.left)*dpr,my=(e.clientY-rect.top)*dpr;
+    const pre=screenToWorld(mx,my);
+    const f=Math.exp(-e.deltaY*0.0015);
+    zoom=Math.max(1e-6,Math.min(1e9,zoom*f));
+    const post=worldToScreen(pre.x,pre.y);
+    pan.x+=mx-post.x;pan.y+=my-post.y;
+    draw();
+  },{passive:false});
+  canvas.addEventListener("dblclick",()=>{zoom=1;theta=0;pan={x:0,y:0};draw();});
+
+  function worldToScreen(wx,wy){
+    const cos=Math.cos(theta),sin=Math.sin(theta);
+    const rx=wx*cos-wy*sin,ry=wx*sin+wy*cos;
+    const s=baseScale*zoom;
+    return {x:rx*s+canvas.width/2+pan.x,y:ry*s+canvas.height/2+pan.y};
+  }
+  function screenToWorld(sx,sy){
+    const x=sx-(canvas.width/2+pan.x),y=sy-(canvas.height/2+pan.y);
+    const inv=1/(baseScale*zoom);
+    const rx=x*inv,ry=y*inv;
+    const cos=Math.cos(-theta),sin=Math.sin(-theta);
+    return {x:rx*cos-ry*sin,y:rx*sin+ry*cos};
+  }
+
+  const margin=0.2,minGap=1500;
+  function computePositions(){
+    const pos=[];let x=0;
+    for(let i=0;i<bodies.length;i++){
+      const r=bodies[i].radiusKm;
+      if(i===0){pos.push({x,y:0});continue;}
+      const prev=bodies[i-1].radiusKm;
+      const step=Math.max((prev+r)*(1+margin),prev+r+minGap);
+      x+=step;pos.push({x,y:0});
+    }
+    const xMin=pos[0].x-bodies[0].radiusKm, xMax=pos.at(-1).x+bodies.at(-1).radiusKm;
+    const center=(xMin+xMax)/2; pos.forEach(p=>p.x-=center);
+    return pos;
+  }
+  const positions=computePositions();
+
+  function draw(){
+    ctx.fillStyle="#0b1020";ctx.fillRect(0,0,canvas.width,canvas.height);
+    for(let i=0;i<bodies.length;i++){
+      const b=bodies[i],pW=positions[i],p=worldToScreen(pW.x,pW.y);
+      const rPx=Math.max(1,b.radiusKm*baseScale*zoom);
+      ctx.beginPath();ctx.arc(p.x,p.y,rPx,0,2*Math.PI);
+      ctx.fillStyle=b.color;ctx.fill();
+      const g=ctx.createRadialGradient(p.x-rPx*0.4,p.y-rPx*0.4,rPx*0.2,p.x,p.y,rPx*1.05);
+      g.addColorStop(0,"rgba(0,0,0,0)");g.addColorStop(1,"rgba(0,0,0,0.4)");
+      ctx.fillStyle=g;ctx.fill();
+      ctx.strokeStyle="rgba(255,255,255,0.25)";ctx.lineWidth=0.8*dpr;ctx.stroke();
+      ctx.fillStyle="#fff";ctx.font=`${12*dpr}px system-ui`;ctx.textAlign="center";ctx.textBaseline="bottom";
+      ctx.fillText(`${b.name} — ${b.radiusKm.toLocaleString()} km`,p.x,p.y-rPx-8*dpr);
+    }
+    document.getElementById("scaleText").textContent=(baseScale*zoom*1000).toFixed(2);
+  }
+
+  function buildLegend(){
+    const legend=document.getElementById("legend");
+    legend.innerHTML=`<div class="legend-title">Shown to scale by radius</div>
+      <ul>${bodies.map(b=>`<li><span class="swatch" style="background:${b.color}"></span>${b.name}: <b>${b.radiusKm.toLocaleString()}</b> km</li>`).join("")}</ul>
+      <div class="note">White dwarfs are ~Earth-sized (~7000 km). Brown dwarfs are Jupiter-sized (~70,000 km). Neutron stars are ~12 km radius.</div>`;
+    document.getElementById("footer").textContent="Includes planets, moons, dwarf planets, and stars (white dwarf, brown dwarf, neutron star, Sun).";
+  }
+
+  buildLegend();
+  resize();
+})();
+</script>
+</body>
+</html>
